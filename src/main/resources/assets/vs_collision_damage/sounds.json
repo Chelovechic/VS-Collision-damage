@@ -1,0 +1,10 @@
+{
+  "brake_sound": {
+    "sounds": [
+      {
+        "name": "brake_sound",
+        "stream": false
+      }
+    ]
+  }
+}
