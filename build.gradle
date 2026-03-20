@@ -1,0 +1,115 @@
+plugins {
+    id 'eclipse'
+    id 'idea'
+    id 'maven-publish'
+    id 'net.minecraftforge.gradle' version '[6.0,6.2)'
+    id 'org.jetbrains.kotlin.jvm' version "$kotlin_version"
+}
+
+version = mod_version
+group = maven_group
+
+base {
+    archivesName = archives_base_name
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+minecraft {
+    mappings channel: 'official', version: minecraft_version
+    copyIdeResources = true
+
+    runs {
+        configureEach {
+            workingDirectory project.file('run')
+
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+
+            mods {
+                "${mod_id}" {
+                    source sourceSets.main
+                }
+            }
+        }
+
+        client {
+            property 'forge.enabledGameTestNamespaces', mod_id
+        }
+
+        server {
+            property 'forge.enabledGameTestNamespaces', mod_id
+            args '--nogui'
+        }
+
+        gameTestServer {
+            property 'forge.enabledGameTestNamespaces', mod_id
+        }
+
+        data {
+            workingDirectory project.file('run-data')
+            args '--mod', mod_id, '--all', '--output', file('src/generated/resources/'), '--existing', file('src/main/resources/')
+        }
+    }
+}
+
+sourceSets.main.resources { srcDir 'src/generated/resources' }
+
+repositories {
+    mavenCentral()
+    mavenLocal()
+    maven {
+        name = "Valkyrien Skies"
+        url = vs_maven_url ?: 'https://maven.valkyrienskies.org'
+        if (vs_maven_username && vs_maven_password) {
+            credentials {
+                username = vs_maven_username
+                password = vs_maven_password
+            }
+        }
+    }
+    maven {
+        name = 'Kotlin for Forge'
+        url = 'https://thedarkcolour.github.io/KotlinForForge/'
+        content { includeGroup "thedarkcolour" }
+    }
+}
+
+dependencies {
+    minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+
+
+    implementation fg.deobf("org.valkyrienskies:valkyrienskies-120-forge:${vs2_version}")
+    implementation("org.valkyrienskies.core:api:${vscore_version}") { transitive = true }
+    implementation("org.valkyrienskies.core:util:${vscore_version}") { transitive = true }
+    implementation("org.valkyrienskies.core:internal:${vscore_version}") { transitive = true }
+
+
+    implementation fg.deobf("thedarkcolour:kotlinforforge:${kotlin_forge}")
+}
+
+tasks.named('processResources', ProcessResources).configure {
+
+    inputs.property 'version', version
+    filesMatching(['META-INF/mods.toml', 'pack.mcmeta']) {
+        expand([version: version])
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 17
+}
+
+tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+    kotlinOptions {
+        jvmTarget = '17'
+        freeCompilerArgs += '-Xjvm-default=all'
+    }
+}
+
+tasks.named('jar', Jar).configure {
+
+    finalizedBy 'reobfJar'
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
