@@ -40,3 +40,17 @@ mandatory = true
 versionRange = "[2.4.0,)"
 ordering = "AFTER"
 side = "BOTH"
+
+[[dependencies.vs_collision_damage]]
+modId = "createbigcannons"
+mandatory = true
+versionRange = "[5.11.0,)"
+ordering = "AFTER"
+side = "BOTH"
+
+[[dependencies.vs_collision_damage]]
+modId = "towl"
+mandatory = false
+versionRange = "[0,)"
+ordering = "NONE"
+side = "BOTH"

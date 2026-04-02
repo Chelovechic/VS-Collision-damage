@@ -1,59 +1,91 @@
-package org.valkyrienskies.vs_template.forge;
+package org.collisionmod.collision.forge;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.item.CreativeModeTabs;
+import net.minecraft.world.item.Item;
+import net.minecraft.commands.Commands;
+import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.BuildCreativeModeTabContentsEvent;
 import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.config.ModConfig;
+import net.minecraftforge.fml.ModLoadingContext;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import net.minecraftforge.registries.DeferredRegister;
+import net.minecraftforge.registries.ForgeRegistries;
+import net.minecraftforge.registries.RegistryObject;
 import org.joml.Matrix4dc;
 import org.joml.Vector3d;
 import org.joml.Vector3dc;
 
-import org.valkyrienskies.core.api.events.CollisionEvent;
 import org.valkyrienskies.core.api.physics.ContactPoint;
 import org.valkyrienskies.core.api.ships.LoadedServerShip;
-import org.valkyrienskies.mod.common.ValkyrienSkiesMod;
 import org.valkyrienskies.mod.common.VSGameUtilsKt;
 
 import java.util.Comparator;
-import java.util.concurrent.ConcurrentLinkedQueue;
-
-
-//maralys иди нахуй
 
 
 @Mod("vs_collision_damage")
 public class VSCollision {
 
-    private static final double MIN_SPEED = 7.0;
-
-    private static final double MIN_SPEED_RADIUS = 40;
-    private static final int SIZE_RADIUS = 1;
-
-    private static final double SPEED_COLLIDER = 15.0;
-    private static final int MAX_BLOCKS = 64000000;
-
-    private static final double MIN_SPEED_EXPOSION = 30.0;
-    private static final float EXPLOSION_POWER = 2.0f;
-    private static final boolean EXPLOSION = true;
-
-    private static final ConcurrentLinkedQueue<CollisionEvent> collisionQueue = new ConcurrentLinkedQueue<>();
+    private static final DeferredRegister<Item> ITEMS = DeferredRegister.create(ForgeRegistries.ITEMS, "vs_collision_damage");
+    // public static final RegistryObject<Item> TESTER = ITEMS.register("tester", () -> new TesterItem(new Item.Properties()));
 
     public VSCollision() {
         var modBus = FMLJavaModLoadingContext.get().getModEventBus();
         modBus.addListener(this::init);
+        modBus.addListener(this::buildCreativeTabs);
+        ITEMS.register(modBus);
+        ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, VSCollisionConfig.COMMON_SPEC);
         MinecraftForge.EVENT_BUS.register(this);
     }
 
     private void init(FMLCommonSetupEvent event) {
-        ValkyrienSkiesMod.getApi().getCollisionStartEvent().on(ev -> collisionQueue.add(ev));
+
+        VSCollisionEvents.register();
+    }
+
+    private void buildCreativeTabs(BuildCreativeModeTabContentsEvent event) {
+        // if (event.getTabKey() == CreativeModeTabs.TOOLS_AND_UTILITIES) {
+        //     event.accept(TESTER);
+        // }
+    }
+
+    @SubscribeEvent
+    public void onRegisterCommands(RegisterCommandsEvent event) {
+        var dispatcher = event.getDispatcher();
+
+        dispatcher.register(
+            Commands.literal("vsCollision")
+                .requires(source -> source.hasPermission(2))
+                .then(Commands.literal("mode")
+                    .then(Commands.literal("PhysX")
+                        .executes(ctx -> {
+                            VSCollisionEvents.MODE = VSCollisionEvents.BackendMode.PHYSX;
+                            CommandSourceStack src = ctx.getSource();
+                            src.sendSuccess(() -> Component.literal("PhysX mode enabled (recommended) - only PhysX backend (collisionStartEvent)"), true);
+                            return 1;
+                        })
+                    )
+                    .then(Commands.literal("Krunch")
+                        .executes(ctx -> {
+                            VSCollisionEvents.MODE = VSCollisionEvents.BackendMode.KRUNCH;
+                            CommandSourceStack src = ctx.getSource();
+                            src.sendSuccess(() -> Component.literal("Krunch mode enabled (not recommended) - Krunch and PhysX backend (CollisionPersistEvent)"), true);
+                            return 1;
+                        })
+                    )
+                )
+        );
     }
 
     @SubscribeEvent
@@ -62,7 +94,7 @@ public class VSCollision {
         MinecraftServer server = event.getServer();
 
         while (true) {
-            CollisionEvent collision = collisionQueue.poll();
+            var collision = VSCollisionEvents.QUEUE.poll();
             if (collision == null) break;
 
             var dimId = collision.getDimensionId();
@@ -86,9 +118,25 @@ public class VSCollision {
 
             double impactSpeed = Math.max(contactRelSpeed, centerRelSpeed);
 
-            if (impactSpeed < MIN_SPEED) continue;
+            double minSpeed = VSCollisionConfig.COMMON.minSpeed.get();
+            double minSpeedRadius = VSCollisionConfig.COMMON.minSpeedRadius.get();
+            int sizeRadius = VSCollisionConfig.COMMON.sizeRadius.get();
+            double speedCollider = VSCollisionConfig.COMMON.speedCollider.get();
+            double minSpeedExplosion = VSCollisionConfig.COMMON.minSpeedExplosion.get();
+            float explosionPower = VSCollisionConfig.COMMON.explosionPower.get().floatValue();
+            boolean explosionEnabled = VSCollisionConfig.COMMON.explosionEnabled.get();
 
-            int radius = impactSpeed >= MIN_SPEED_RADIUS ? SIZE_RADIUS : 0;
+            if (impactSpeed < minSpeed) continue;
+
+            int radius = impactSpeed >= minSpeedRadius ? sizeRadius : 0;
+
+
+            double budgetPerSpeed = VSCollisionConfig.COMMON.budgetPerSpeed.get();
+            double costBase = VSCollisionConfig.COMMON.costBase.get();
+            double costToughnessMult = VSCollisionConfig.COMMON.costExplosionResMult.get();
+
+            final double initialBudget = impactSpeed * budgetPerSpeed;
+            final double[] budget = new double[] { initialBudget };
 
             int destroyedTotal = 0;
             double explosionPosX = 0;
@@ -96,20 +144,20 @@ public class VSCollision {
             double explosionPosZ = 0;
             boolean explosionPosSet = false;
 
-            if (impactSpeed >= SPEED_COLLIDER) {
+            if (impactSpeed >= speedCollider) {
                 var contacts = collision.getContactPoints().stream()
                         .sorted(Comparator.comparingDouble((ContactPoint cp) -> {
                             Vector3dc v = cp.getVelocity();
                             return v.x() * v.x() + v.y() * v.y() + v.z() * v.z();
                         }).reversed())
-                        .limit(MAX_BLOCKS)
                         .toList();
 
                 for (ContactPoint cp : contacts) {
+                    if (budget[0] <= 0.0) break;
                     var pos = cp.getPosition();
 
-                    int dA = hitBlocksOnShip(level, pos.x(), pos.y(), pos.z(), shipA.getWorldToShip(), radius);
-                    int dB = hitBlocksOnShip(level, pos.x(), pos.y(), pos.z(), shipB.getWorldToShip(), radius);
+                    int dA = hitBlocksOnShip(level, pos.x(), pos.y(), pos.z(), shipA.getWorldToShip(), radius, budget, costBase, costToughnessMult);
+                    int dB = hitBlocksOnShip(level, pos.x(), pos.y(), pos.z(), shipB.getWorldToShip(), radius, budget, costBase, costToughnessMult);
                     int d = dA + dB;
                     destroyedTotal += d;
 
@@ -131,8 +179,8 @@ public class VSCollision {
 
                 var pos = contact.getPosition();
 
-                int destroyedA = hitBlocksOnShip(level, pos.x(), pos.y(), pos.z(), shipA.getWorldToShip(), radius);
-                int destroyedB = hitBlocksOnShip(level, pos.x(), pos.y(), pos.z(), shipB.getWorldToShip(), radius);
+                int destroyedA = hitBlocksOnShip(level, pos.x(), pos.y(), pos.z(), shipA.getWorldToShip(), radius, budget, costBase, costToughnessMult);
+                int destroyedB = hitBlocksOnShip(level, pos.x(), pos.y(), pos.z(), shipB.getWorldToShip(), radius, budget, costBase, costToughnessMult);
                 destroyedTotal = destroyedA + destroyedB;
 
                 if (destroyedTotal > 0) {
@@ -144,10 +192,10 @@ public class VSCollision {
             }
 
             if (destroyedTotal > 0) {
-                if (EXPLOSION && impactSpeed >= MIN_SPEED_EXPOSION && explosionPosSet) {
-                    level.explode(null, explosionPosX, explosionPosY, explosionPosZ, EXPLOSION_POWER, Level.ExplosionInteraction.TNT);
+                if (explosionEnabled && impactSpeed >= minSpeedExplosion && explosionPosSet) {
+                    level.explode(null, explosionPosX, explosionPosY, explosionPosZ, explosionPower, Level.ExplosionInteraction.TNT);
                 }
-                /*
+//
                 final double finalSpeedA = velA.length();
                 final double finalSpeedB = velB.length();
                 final double finalCenterRel = centerRelSpeed;
@@ -156,7 +204,7 @@ public class VSCollision {
                 final int contactCount = collision.getContactPoints().size();
                 final int finalDestroyed = destroyedTotal;
 
-                level.players().forEach(p ->
+                /*level.players().forEach(p ->
                         p.sendSystemMessage(
                                 Component.literal(
                                         "DEBUG Collision | " +
@@ -169,7 +217,7 @@ public class VSCollision {
                                                 "destroyed=" + finalDestroyed
                                 )
                         )
-                );*/
+               */// );
             }
         }
     }
@@ -180,7 +228,10 @@ public class VSCollision {
             double worldY,
             double worldZ,
             Matrix4dc shipWorldToShip,
-            int radius
+            int radius,
+            double[] budget,
+            double costBase,
+            double costToughnessMult
     ) {
         Vector3d tmp = new Vector3d();
         shipWorldToShip.transformPosition(worldX, worldY, worldZ, tmp);
@@ -188,15 +239,33 @@ public class VSCollision {
         int ly = (int) Math.floor(tmp.y);
         int lz = (int) Math.floor(tmp.z);
 
-        if (radius <= 0) {
-            BlockPos localPos = new BlockPos(lx, ly, lz);
-            if (VSGameUtilsKt.isBlockInShipyard(level, localPos.getX(), localPos.getY(), localPos.getZ())) {
-                BlockState state = level.getBlockState(localPos);
-                if (!state.isAir() && state.getDestroySpeed(level, localPos) >= 0f && !state.getCollisionShape(level, localPos).isEmpty()) {
-                    level.destroyBlock(localPos, true);
+
+        BlockPos centerPos = new BlockPos(lx, ly, lz);
+        if (VSGameUtilsKt.isBlockInShipyard(level, centerPos.getX(), centerPos.getY(), centerPos.getZ())) {
+                    BlockState state = level.getBlockState(centerPos);
+                    var props = CbcToughnessHelper.getBlockProps(level, state, centerPos);
+
+
+                    if (state.getDestroySpeed(level, centerPos) < 0f && !state.isAir()) {
+                return 0;
+            }
+
+                    if (!state.isAir() && !state.getCollisionShape(level, centerPos).isEmpty()) {
+                        double cost = costBase + (props.toughness() * costToughnessMult);
+                if (budget[0] < cost) {
+
+                    return 0;
+                }
+                budget[0] -= cost;
+                level.destroyBlock(centerPos, true);
+                if (radius <= 0) {
                     return 1;
                 }
+            } else if (radius <= 0) {
+
+                return 0;
             }
+        } else if (radius <= 0) {
             return 0;
         }
 
@@ -204,6 +273,10 @@ public class VSCollision {
         for (int dx = -radius; dx <= radius; dx++) {
             for (int dy = -radius; dy <= radius; dy++) {
                 for (int dz = -radius; dz <= radius; dz++) {
+                    if (budget[0] <= 0.0) return destroyed;
+
+                    if (dx == 0 && dy == 0 && dz == 0) continue;
+
                     BlockPos localPos = new BlockPos(lx + dx, ly + dy, lz + dz);
                     if (!VSGameUtilsKt.isBlockInShipyard(level, localPos.getX(), localPos.getY(), localPos.getZ())) continue;
 
@@ -211,6 +284,10 @@ public class VSCollision {
                     if (state.isAir() || state.getDestroySpeed(level, localPos) < 0f) continue;
                     if (state.getCollisionShape(level, localPos).isEmpty()) continue;
 
+                    var props = CbcToughnessHelper.getBlockProps(level, state, localPos);
+                    double cost = costBase + (props.toughness() * costToughnessMult);
+                    if (budget[0] < cost) continue;
+                    budget[0] -= cost;
                     level.destroyBlock(localPos, true);
                     destroyed++;
                 }
