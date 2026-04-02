@@ -9,6 +9,10 @@ You can customize the settings in the config file yourself "vs_collision_damage-
 
 - Create big cannons (preferably)
 
+### Important: I recommend using PhysX rather than Krunch.
+
+(/vs backend engine physx) and /vsCollision mode PhysX
+
 
 How it work? https://www.youtube.com/watch?v=2Q1Y_hKAc6I
 
