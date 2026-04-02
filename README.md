@@ -1,4 +1,3 @@
-
 ## This mod adds damage to Valkyrien skies construction from collisions.
 
 The damage depends on the speed of the collision. So far, the damage is only between ships, the damage from the blocks of the world will appear later.

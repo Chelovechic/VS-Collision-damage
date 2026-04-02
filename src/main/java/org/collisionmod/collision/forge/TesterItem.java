@@ -1,3 +1,4 @@
+/*
 package org.collisionmod.collision.forge;
 
 import net.minecraft.core.BlockPos;
@@ -31,7 +32,7 @@ public class TesterItem extends Item {
         BlockHitResult hit = level.clip(ctx);
 
         if (hit.getType() != BlockHitResult.Type.BLOCK) {
-            player.sendSystemMessage(Component.literal("nothing"));
+            player.sendSystemMessage(Component.literal("[Tester] No block in range"));
             return InteractionResultHolder.success(player.getItemInHand(hand));
         }
 
@@ -46,12 +47,14 @@ public class TesterItem extends Item {
         double cost = costBase + (props.toughness() * costToughnessMult);
 
         String src = props.fromCbc() ? "CBC" : "fallback";
-        String msg = String.format("[Tester] %s @ %d,%d,%d | hardness=%.2f | toughness=%.2f (%s) | cost=%.2f",
-            state.getBlock().getDescriptionId(), pos.getX(), pos.getY(), pos.getZ(),
-            props.hardness(), props.toughness(), src, cost);
+        String msg = String.format("[Tester] %s | hardness=%.2f | toughness=%.2f (%s) | cost=%.2f",
+                state.getBlock().getDescriptionId(),
+                props.hardness(), props.toughness(), src, cost);
 
         player.sendSystemMessage(Component.literal(msg));
 
         return InteractionResultHolder.success(player.getItemInHand(hand));
+
     }
 }
+*/

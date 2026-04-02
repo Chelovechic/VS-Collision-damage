@@ -10,7 +10,7 @@ public final class CbcToughnessHelper {
 
     public static record BlockProps(double hardness, double toughness, boolean fromCbc) {}
 
-    public static BlockProps getBlockProps(Level level, BlockState state, BlockPos pos) {
+    public static org.collisionmod.collision.forge.CbcToughnessHelper.BlockProps getBlockProps(Level level, BlockState state, BlockPos pos) {
         try {
             Class<?> handlerClass = Class.forName(HANDLER_CLASS);
             var getProperties = handlerClass.getMethod("getProperties", BlockState.class);
@@ -24,7 +24,7 @@ public final class CbcToughnessHelper {
                 double toughness = (Double) toughnessMethod.invoke(provider, level, state, pos, true);
                 double hardness = (Double) hardnessMethod.invoke(provider, level, state, pos, true);
 
-                return new BlockProps(hardness, toughness, true);
+                return new org.collisionmod.collision.forge.CbcToughnessHelper.BlockProps(hardness, toughness, true);
             }
         } catch (Throwable ignored) {
             // -CBC
@@ -33,7 +33,7 @@ public final class CbcToughnessHelper {
 
         double h = 1.0;
         double t = state.getExplosionResistance(level, pos, null);
-        return new BlockProps(h, t, false);
+        return new org.collisionmod.collision.forge.CbcToughnessHelper.BlockProps(h, t, false);
     }
 }
 
