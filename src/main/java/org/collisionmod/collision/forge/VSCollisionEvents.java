@@ -17,7 +17,7 @@ public final class VSCollisionEvents {
     }
 
 
-    public static volatile BackendMode MODE = BackendMode.PHYSX;
+    public static volatile BackendMode MODE = BackendMode.KRUNCH;
 
     private static volatile boolean registered = false;
 

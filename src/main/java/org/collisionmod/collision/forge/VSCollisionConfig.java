@@ -7,6 +7,9 @@ public class VSCollisionConfig {
     public static final ForgeConfigSpec COMMON_SPEC;
     public static final org.collisionmod.collision.forge.VSCollisionConfig.Common COMMON;
 
+    public static final ForgeConfigSpec CLIENT_SPEC;
+    public static final VisualClientConfig CLIENT;
+
     public static class Common {
 
         public final ForgeConfigSpec.ConfigValue<Double> minSpeed;
@@ -29,6 +32,17 @@ public class VSCollisionConfig {
         public final ForgeConfigSpec.ConfigValue<Double> costExplosionResMult;
 
         public final ForgeConfigSpec.ConfigValue<Double> costMassScale;
+        // Частицы (клиент): count/speed зависят от impactSpeed
+        public final ForgeConfigSpec.ConfigValue<Double> blockBurstCountBase;
+        public final ForgeConfigSpec.ConfigValue<Double> blockBurstCountPerSpeed;
+        public final ForgeConfigSpec.ConfigValue<Double> blockBurstSpeedBase;
+        public final ForgeConfigSpec.ConfigValue<Double> blockBurstSpeedPerSpeed;
+        public final ForgeConfigSpec.ConfigValue<Double> maxBlockParticlesPerCollision;
+        // Кастомные uck_*: count = base + impact*perSpeed, скорость статична
+        public final ForgeConfigSpec.ConfigValue<Double> uckCountBase;
+        public final ForgeConfigSpec.ConfigValue<Double> uckCountPerSpeed;
+        public final ForgeConfigSpec.ConfigValue<Double> uckSpeed;
+        public final ForgeConfigSpec.ConfigValue<Double> maxUckParticlesPerCollision;
 
 
         public final ForgeConfigSpec.ConfigValue<Double> shipSpeedL;
@@ -131,6 +145,39 @@ public class VSCollisionConfig {
 
             builder.pop();
 
+            builder.push("particles");
+            blockBurstCountBase = builder
+                    .comment("частицы блоков: базовое количество")
+                    .define("blockBurstCountBase", 5.0, o -> o instanceof Double d && d >= 0.0 && d <= 500.0);
+            blockBurstCountPerSpeed = builder
+                    .comment("добавка количества на 1 м/с")
+                    .define("blockBurstCountPerSpeed", 0.4, o -> o instanceof Double d && d >= 0.0 && d <= 100.0);
+            blockBurstSpeedBase = builder
+                    .comment(" базовая скорость разлета")
+                    .define("blockBurstSpeedBase", 0.6, o -> o instanceof Double d && d >= 0.0 && d <= 100.0);
+            blockBurstSpeedPerSpeed = builder
+                    .comment("добавка скорости на 1 м/с")
+                    .define("blockBurstSpeedPerSpeed", 0.02, o -> o instanceof Double d && d >= 0.0 && d <= 10.0);
+            maxBlockParticlesPerCollision = builder
+                    .comment("максимальное кол-во частиц за один вызов")
+                    .define("maxBlockParticlesPerCollision", 150.0, o -> o instanceof Double d && d >= 1.0 && d <= 5000.0);
+
+            builder.comment("\n");
+            uckCountBase = builder
+                    .comment("Искры базовое кол-во")
+                    .define("uckCountBase", 1.0, o -> o instanceof Double d && d >= 0.0 && d <= 100.0);
+            uckCountPerSpeed = builder
+                    .comment("добавка количества на 1 м/с")
+                    .define("uckCountPerSpeed", 0.04, o -> o instanceof Double d && d >= 0.0 && d <= 10.0);
+            uckSpeed = builder
+                    .comment("статическая скорость разлета")
+                    .define("uckSpeed", 0.23, o -> o instanceof Double d && d >= 0.0 && d <= 10.0);
+            maxUckParticlesPerCollision = builder
+                    .comment("максимальное кол-во частиц за один вызов")
+                    .define("maxUckParticlesPerCollision", 150.0, o -> o instanceof Double d && d >= 1.0 && d <= 5000.0);
+
+            builder.pop();
+
             builder.push("Depth_damage");
             shipSpeedL = builder
                     .comment("Блоков на 1 м/с")
@@ -155,9 +202,27 @@ public class VSCollisionConfig {
         }
     }
 
+    public static final class VisualClientConfig {
+        public final ForgeConfigSpec.BooleanValue disableCollisionParticles;
+
+        VisualClientConfig(ForgeConfigSpec.Builder builder) {
+            builder.push("Client");
+            disableCollisionParticles = builder
+                    .comment("отключить отрисовку частиц")
+                    .define("disableCollisionParticles", false);
+            builder.pop();
+        }
+    }
+
     static {
         ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
         COMMON = new org.collisionmod.collision.forge.VSCollisionConfig.Common(builder);
         COMMON_SPEC = builder.build();
+    }
+
+    static {
+        ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
+        CLIENT = new VisualClientConfig(builder);
+        CLIENT_SPEC = builder.build();
     }
 }

@@ -38,8 +38,95 @@ import java.util.Comparator;
 @Mod("vs_collision_damage")
 public class VSCollision {
 
-    //вкл-выкл логи
+
     private static final boolean additional_debug = false;
+
+        private static final double IMPACT_BLOCK_PARTICLE_MULT = 3.0;
+    
+        private static final int   BLOCK_PARTICLE_MAX     = 42;
+    
+
+
+        private static void sendDirectedParticle(ServerLevel level, net.minecraft.core.particles.ParticleOptions particle, double x, double y, double z,
+                                                 double vx, double vy, double vz) {
+            level.sendParticles(particle, x, y, z, 0, vx, vy, vz, 1.0D);
+        }
+
+        private static Vector3d normalizeOrUp(Vector3dc worldNormal) {
+            Vector3d norm = new Vector3d(worldNormal);
+            if (norm.lengthSquared() < 1.0e-8) {
+                norm.set(0.0, 1.0, 0.0);
+            } else {
+                norm.normalize();
+            }
+            return norm;
+        }
+
+
+        private static int computeUckCount(double impactSpeed) {
+            double base = VSCollisionConfig.COMMON.uckCountBase.get();
+            double perSpeed = VSCollisionConfig.COMMON.uckCountPerSpeed.get();
+            int maxParticles = Math.max(1, (int) Math.floor(VSCollisionConfig.COMMON.maxUckParticlesPerCollision.get()));
+            int raw = Math.max(0, (int) Math.floor(base + impactSpeed * perSpeed));
+            return Math.min(raw, maxParticles);
+        }
+
+        private static void emitUckParticles(ServerLevel level, double x, double y, double z, Vector3d norm, double impactSpeed) {
+            int count = computeUckCount(impactSpeed);
+            if (count <= 0) return;
+            double speed = VSCollisionConfig.COMMON.uckSpeed.get();
+
+            if (level.random.nextDouble() <= 0.90D) {
+                spawnDirectedCustom(level, VSCollisionParticles.UCK_1.get(), x, y, z, norm, speed, count);
+            }
+            if (level.random.nextDouble() <= 0.85D) {
+                spawnDirectedCustom(level, VSCollisionParticles.UCK_2.get(), x, y, z, norm, speed, count);
+            }
+            if (level.random.nextDouble() <= 0.80D) {
+                spawnDirectedCustom(level, VSCollisionParticles.UCK_3.get(), x, y, z, norm, speed, count);
+            }
+            if (level.random.nextDouble() <= 0.6D) {
+                spawnDirectedCustom(level, VSCollisionParticles.UCK_4.get(), x, y, z, norm, speed, count);
+            }
+        }
+
+        private static void spawnDirectedCustom(ServerLevel level, net.minecraft.core.particles.ParticleOptions type,
+                                                double x, double y, double z, Vector3d norm, double speed, int count) {
+            for (int i = 0; i < count; i++) {
+                double spreadX = (level.random.nextDouble() - 0.5) * 0.22;
+                double spreadY = (level.random.nextDouble() - 0.5) * 0.22;
+                double spreadZ = (level.random.nextDouble() - 0.5) * 0.22;
+                double vx = norm.x * 0.16 + spreadX;
+                double vy = norm.y * 0.16 + spreadY + 0.16;
+                double vz = norm.z * 0.16 + spreadZ;
+
+                double sx = x + norm.x * 0.95 + (level.random.nextDouble() - 0.5) * 0.26;
+                double sy = y + norm.y * 0.95 + (level.random.nextDouble() - 0.5) * 0.26;
+                double sz = z + norm.z * 0.95 + (level.random.nextDouble() - 0.5) * 0.26;
+                sendDirectedParticle(level, type, sx, sy, sz, vx * speed, vy * speed, vz * speed);
+            }
+        }
+
+        private static void emitBlockImpactParticles(ServerLevel level, double x, double y, double z,
+                                                     BlockState state, Vector3dc worldNormal, double impactSpeed,
+                                                     boolean withFlame) {
+            if (state.isAir()) return;
+    
+            Vector3d norm = normalizeOrUp(worldNormal);
+    
+
+            double blockCount = Math.max(VSCollisionConfig.COMMON.blockBurstCountBase.get(),
+                    Math.min(BLOCK_PARTICLE_MAX, VSCollisionConfig.COMMON.blockBurstCountBase.get() + impactSpeed * VSCollisionConfig.COMMON.blockBurstCountPerSpeed.get()))
+                    * IMPACT_BLOCK_PARTICLE_MULT;
+            if (blockCount <= 0.0D) return;
+    
+            VSCollisionNetwork.sendBlockDebrisBurst(level, x, y, z, state, norm, impactSpeed);
+
+    
+            if (!withFlame) return;
+    
+            emitUckParticles(level, x, y, z, norm, impactSpeed);
+        }
 
     private static final DeferredRegister<Item> ITEMS = DeferredRegister.create(ForgeRegistries.ITEMS, "vs_collision_damage");
     // public static final RegistryObject<Item> TESTER = ITEMS.register("tester", () -> new TesterItem(new Item.Properties()));
@@ -49,13 +136,16 @@ public class VSCollision {
         modBus.addListener(this::init);
         //modBus.addListener(this::buildCreativeTabs);
         ITEMS.register(modBus);
+        VSCollisionParticles.PARTICLES.register(modBus);
         ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, VSCollisionConfig.COMMON_SPEC);
+        ModLoadingContext.get().registerConfig(ModConfig.Type.CLIENT, VSCollisionConfig.CLIENT_SPEC);
         MinecraftForge.EVENT_BUS.register(this);
     }
 
     private void init(FMLCommonSetupEvent event) {
 
         VSCollisionEvents.register();
+        VSCollisionNetwork.register();
     }
     /*
         private void buildCreativeTabs(BuildCreativeModeTabContentsEvent event) {
@@ -70,7 +160,7 @@ public class VSCollision {
 
         dispatcher.register(
                 Commands.literal("vsCollision")
-                        .requires(source -> source.hasPermission(2)) // только операторы
+                        .requires(source -> source.hasPermission(2)) 
                         .then(Commands.literal("mode")
                                 .then(Commands.literal("PhysX")
                                         .executes(ctx -> {
@@ -357,7 +447,6 @@ public class VSCollision {
         return Math.max(0, extra);
     }
 
-
     private static int hitBlocksOnShip(
             ServerLevel level,
             double worldX,
@@ -393,6 +482,9 @@ public class VSCollision {
         if (VSGameUtilsKt.isBlockInShipyard(level, centerPos.getX(), centerPos.getY(), centerPos.getZ())) {
             BlockState state = level.getBlockState(centerPos);
             var props = CbcToughnessHelper.getBlockProps(level, state, centerPos);
+            if (!state.isAir() && !state.getCollisionShape(level, centerPos).isEmpty()) {
+                emitBlockImpactParticles(level, worldX, worldY, worldZ, state, worldNormal, impactSpeed, true);
+            }
 
             if (state.getDestroySpeed(level, centerPos) < 0f && !state.isAir()) {
                 return 0;
@@ -438,7 +530,7 @@ public class VSCollision {
                 if (innerState.getDestroySpeed(level, inner) < 0f) {
                     break;
                 }
-                if (innerState.getCollisionShape(level, inner).isEmpty()) {
+                if (innerState.getCollisionShape(level, inner).isEmpty()) {.requires(source -> source.hasPermission(2))
                     continue;
                 }
                 var innerProps = CbcToughnessHelper.getBlockProps(level, innerState, inner);
@@ -458,7 +550,7 @@ public class VSCollision {
                 String chat = String.format(
                         "debug | цель id=%d B=%.2f кг | A=%.2f кг | impact=%.4f | res=%.4f | blocks=%d | desBlocks=%d",
                         ship.getId(),
-                        targetMassKg,
+                        targetMassKg, 
                         attackerMassKg,
                         impactSpeed,
                         resDamage,
